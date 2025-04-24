@@ -6,7 +6,7 @@ pipeline {
         GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account')  // Service account credentials
         DOCKER_HUB_CREDENTIALS_USR = 'dockernikhil999'  // Your Docker Hub username
         IMAGE_NAME = 'cloudrun'  // Docker image name
-        DOCKER_HUB_CREDENTIALS_PSWD = credentials(docker-hub-password)  // Docker Hub password credentials
+        DOCKER_HUB_CREDENTIALS_PSWD = credentials('docker-hub-password')  // Docker Hub password credentials
     }
 
     stages {
