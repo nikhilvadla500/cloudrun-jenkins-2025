@@ -1,12 +1,11 @@
 pipeline {
-    agent any  // Use the 'any' agent, similar to the working App Engine pipeline
+    agent any
 
     environment {
-        PROJECT_ID = 'careful-ensign-470212-v5'  // GCP Project ID
-        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account')  // Service account credentials
-        DOCKER_HUB_CREDENTIALS_USR = 'dockernikhil999'  // Your Docker Hub username
-        IMAGE_NAME = 'cloudrun'  // Docker image name
-        DOCKER_HUB_CREDENTIALS_PSWD = credentials('docker-hub-password')  // Docker Hub password credentials
+        PROJECT_ID = 'careful-ensign-470212-v5'
+        GOOGLE_APPLICATION_CREDENTIALS = credentials('gcp-service-account')
+        DOCKER_HUB_USERNAME = 'dockernikhil999'
+        IMAGE_NAME = 'cloudrun'
     }
 
     stages {
@@ -19,8 +18,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Build the Docker image
-                    sh "docker build -t ${DOCKER_HUB_CREDENTIALS_USR}/${IMAGE_NAME}:${BUILD_NUMBER} ."
+                    sh "docker build -t ${DOCKER_HUB_USERNAME}/${IMAGE_NAME}:${BUILD_NUMBER} ."
                 }
             }
         }
@@ -28,12 +26,13 @@ pipeline {
         stage('Push Docker Image to Docker Hub') {
             steps {
                 script {
-                    // Login to Docker Hub using stored credentials
+                    // login + push inside same credentials block
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-password', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                        sh "echo $DOCKER_PASSWORD | docker login -u $DOCKER_USERNAME --password-stdin"
+                        sh '''
+                            echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+                            docker push ${DOCKER_USERNAME}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        '''
                     }
-                    // Push the Docker image to Docker Hub
-                    sh "docker push ${DOCKER_HUB_CREDENTIALS_USR}/${IMAGE_NAME}:${BUILD_NUMBER}"
                 }
             }
         }
@@ -41,23 +40,20 @@ pipeline {
         stage('Deploy to Google Cloud Run') {
             steps {
                 script {
-                    // Authenticate with Google Cloud using the service account key stored in Jenkins
                     withCredentials([file(credentialsId: 'gcp-service-account', variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
-                        // Set GCP project
-                        sh "gcloud config set project ${PROJECT_ID}"
-
-                        // Deploy the Docker image from Docker Hub to Google Cloud Run
-                        sh "gcloud run deploy ${IMAGE_NAME} \
-                            --image docker.io/${DOCKER_HUB_CREDENTIALS_USR}/${IMAGE_NAME}:${BUILD_NUMBER} \
-                            --platform managed \
-                            --region us-central1 \
-                            --allow-unauthenticated"
-                        
-                        // Add IAM policy to allow public access to the Cloud Run service
-                        sh "gcloud run services add-iam-policy-binding ${IMAGE_NAME} \
-                            --region us-central1 \
-                            --member='allUsers' \
-                            --role='roles/run.invoker'"
+                        sh """
+                            gcloud auth activate-service-account --key-file=${GOOGLE_APPLICATION_CREDENTIALS}
+                            gcloud config set project ${PROJECT_ID}
+                            gcloud run deploy ${IMAGE_NAME} \
+                                --image docker.io/${DOCKER_HUB_USERNAME}/${IMAGE_NAME}:${BUILD_NUMBER} \
+                                --platform managed \
+                                --region us-central1 \
+                                --allow-unauthenticated
+                            gcloud run services add-iam-policy-binding ${IMAGE_NAME} \
+                                --region us-central1 \
+                                --member='allUsers' \
+                                --role='roles/run.invoker'
+                        """
                     }
                 }
             }
@@ -65,13 +61,8 @@ pipeline {
 
         stage('Cleanup Workspace') {
             steps {
-                script {
-                    // Clean up the workspace after the pipeline
-                    cleanWs()
-                }
+                cleanWs()
             }
         }
     }
-
-    // No 'post' block, manual cleanup done in the final stage
 }
